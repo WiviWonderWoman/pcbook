@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -26,7 +27,22 @@ func main() {
 	}
 
 	laptopClient := pb.NewLaptopServiceClient(conn)
+	for i := 0; i < 10; i++ {
+		createLaptop(laptopClient)
+	}
 
+	filter := &pb.Filter{
+		MaxPriceUsd: 3000,
+		MinCpuCores: 4,
+		MinCpuGhz:   2.5,
+		MinRam:      &pb.Memory{Value: 8, Unit: pb.Memory_GIGABYTE},
+	}
+
+	searchLaptop(laptopClient, filter)
+}
+
+// createLaptop creates a random laptop
+func createLaptop(laptopClient pb.LaptopServiceClient) {
 	laptop := sample.NewLaptop()
 	req := &pb.CreateLaptopRequest{
 		Laptop: laptop,
@@ -49,4 +65,36 @@ func main() {
 	}
 
 	fmt.Printf("created laptop with id: %s\n", res.Id)
+}
+
+func searchLaptop(laptopClient pb.LaptopServiceClient, filter *pb.Filter) {
+	fmt.Printf("search filter: %v\n", filter)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req := &pb.SearchLaptopRequest{Filter: filter}
+	stream, err := laptopClient.SearchLaptop(ctx, req)
+	if err != nil {
+		log.Fatal("cannot search laptop: ", err)
+	}
+
+	for {
+		res, err := stream.Recv()
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			log.Fatal("cannot receive response: ", err)
+		}
+
+		laptop := res.GetLaptop()
+		fmt.Printf("- found: %s\n", laptop.GetId())
+		fmt.Printf(" + brand: %s\n", laptop.GetBrand())
+		fmt.Printf(" + name: %s\n", laptop.GetName())
+		fmt.Printf(" + cpu cores: %d\n", laptop.GetCpu().GetNumberCores())
+		fmt.Printf(" + cpu min ghz: %v\n", laptop.GetCpu().GetMinGhz())
+		fmt.Printf(" + ram: %d%s\n", laptop.GetRam().GetValue(), laptop.GetRam().GetUnit())
+		fmt.Printf(" + price: %v usd\n", laptop.GetPriceUsd())
+	}
 }
