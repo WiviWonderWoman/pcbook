@@ -12,3 +12,5 @@ client:
 
 test:
 	go test ./serializer ./service
+
+.PHONY: gen clean server client test
