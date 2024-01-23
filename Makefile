@@ -4,9 +4,11 @@ gen:
 clean:
 	rm pb/*.go
 
+# -tls flag to enable/disable SSL/TLS
 server:
 	go run cmd/server/main.go -port 8080
 
+# -tls flag to enable/disable SSL/TLS
 client:
 	go run cmd/client/main.go -address 0.0.0.0:8080
 
