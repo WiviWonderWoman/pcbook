@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -11,7 +14,7 @@ import (
 	"example.com/pcbook/pb"
 	"example.com/pcbook/sample"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 )
 
 func testCreateLaptop(laptopClient *client.LaptopClient) {
@@ -71,7 +74,7 @@ func testRateLaptop(laptopClient *client.LaptopClient) {
 }
 
 const (
-	username        = "user1"
+	username        = "admin1"
 	password        = "secret"
 	refreshDuration = 30 * time.Second
 )
@@ -85,12 +88,45 @@ func authMethods() map[string]bool {
 	}
 }
 
+func loadTLSCredentials() (credentials.TransportCredentials, error) {
+	// Load certificate of the CA who signed server's certificate
+	pemServerCA, err := os.ReadFile("cert/ca-cert.pem")
+	if err != nil {
+		return nil, err
+	}
+
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(pemServerCA) {
+		return nil, fmt.Errorf("failed to add server CA's certificate")
+	}
+	// * Mutual TLS
+	// load client's certificate and private key
+	clientCert, err := tls.LoadX509KeyPair("cert/client-cert.pem", "cert/client-key.pem")
+	if err != nil {
+		return nil, err
+	}
+	// *
+
+	// Create the credentials and return it
+	config := &tls.Config{
+		Certificates: []tls.Certificate{clientCert}, // * Mutual TLS
+		RootCAs:      certPool,
+	}
+
+	return credentials.NewTLS(config), nil
+}
+
 func main() {
 	serverAddress := flag.String("address", "", "the server address")
 	flag.Parse()
 	fmt.Printf("dial server %s\n", *serverAddress)
 
-	cc1, err := grpc.Dial(*serverAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	tlsCredentials, err := loadTLSCredentials()
+	if err != nil {
+		log.Fatal("client cannot load TLS credentials: ", err)
+	}
+
+	cc1, err := grpc.Dial(*serverAddress, grpc.WithTransportCredentials(tlsCredentials))
 	if err != nil {
 		log.Fatal("cannot dial server: ", err)
 	}
@@ -103,7 +139,7 @@ func main() {
 
 	cc2, err := grpc.Dial(
 		*serverAddress,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(tlsCredentials),
 		grpc.WithUnaryInterceptor(interceptor.Unary()),
 		grpc.WithStreamInterceptor(interceptor.Stream()),
 	)
